@@ -682,6 +682,9 @@ func (picker *BrowserPicker) fetchAndUpdateFavicon(
 	})
 }
 
+// rememberPathPrefix marks a remember choice that is a path rule: "path:github.com/org/repo/*".
+const rememberPathPrefix = "path:"
+
 func (picker *BrowserPicker) buildRememberCheck(
 	urlToOpen string,
 	remember binding.Bool,
@@ -690,31 +693,35 @@ func (picker *BrowserPicker) buildRememberCheck(
 	uto := linkquisition.NewURL(urlToOpen)
 	site, _ := uto.GetSite()
 	domain, _ := uto.GetDomain()
+	segments := uto.GetPathSegments()
 
-	// If site == domain (no subdomain), just show the simple checkbox
-	if site == domain {
-		check := widget.NewCheckWithData(
-			i18n.T("picker.remember_choice"),
-			remember,
-		)
-		return []fyne.CanvasObject{check}
+	// The choices, widest to narrowest: the whole domain, the site, then each directory of the path (every
+	// segment but the last, which is the page itself).
+	type choice struct{ label, matchType string }
+	choices := []choice{
+		{"*." + domain + "/*", linkquisition.BrowserMatchTypeDomain},
+		{site + "/*", linkquisition.BrowserMatchTypeSite},
+	}
+	for i := 1; i < len(segments); i++ {
+		prefix := site + "/" + strings.Join(segments[:i], "/") + "/*"
+		choices = append(choices, choice{prefix, rememberPathPrefix + prefix})
 	}
 
-	// Build radio options with actual values shown
-	siteLabel := i18n.T("picker.remember_site", map[string]interface{}{"Site": site})
-	domainLabel := i18n.T("picker.remember_domain", map[string]interface{}{"Domain": domain})
+	labels := make([]string, 0, len(choices))
+	for _, c := range choices {
+		labels = append(labels, c.label)
+	}
 
-	radio := widget.NewRadioGroup(
-		[]string{siteLabel, domainLabel},
-		func(selected string) {
-			if selected == domainLabel {
-				_ = rememberMatchType.Set(linkquisition.BrowserMatchTypeDomain)
-			} else {
-				_ = rememberMatchType.Set(linkquisition.BrowserMatchTypeSite)
+	radio := widget.NewRadioGroup(labels, func(selected string) {
+		for _, c := range choices {
+			if c.label == selected {
+				_ = rememberMatchType.Set(c.matchType)
+				return
 			}
-		},
-	)
-	radio.SetSelected(siteLabel)
+		}
+	})
+	// Same default as before: this site only.
+	radio.SetSelected(choices[1].label)
 
 	// Indent the radio group to visually nest it under the checkbox
 	indent := canvas.NewRectangle(color.Transparent)
@@ -828,8 +835,12 @@ func (picker *BrowserPicker) browserOpenCallback(
 			uto := linkquisition.NewURL(urlToOpen)
 			matchValue, _ := uto.GetDomain()
 
-			if remType == linkquisition.BrowserMatchTypeSite {
+			switch {
+			case remType == linkquisition.BrowserMatchTypeSite:
 				matchValue, _ = uto.GetSite()
+			case strings.HasPrefix(remType, rememberPathPrefix):
+				matchValue = strings.TrimPrefix(remType, rememberPathPrefix)
+				remType = linkquisition.BrowserMatchTypePath
 			}
 
 			settings.AddRuleToBrowser(&browser, remType, matchValue)

@@ -14,6 +14,8 @@ const (
 	BrowserMatchTypeRegex  = "regex"
 	BrowserMatchTypeDomain = "domain"
 	BrowserMatchTypeSite   = "site"
+	// BrowserMatchTypePath matches a host and the start of its path, written "host/seg/seg/*".
+	BrowserMatchTypePath = "path"
 
 	SourceAuto   = "auto"
 	SourceManual = "manual"
@@ -105,6 +107,10 @@ func (s *BrowserSettings) MatchesUrl(u string) bool {
 		case BrowserMatchTypeSite:
 			match := siteRegex.FindStringSubmatch(u)
 			if len(match) > 1 && strings.EqualFold(match[1], s.Matches[i].Value) {
+				return true
+			}
+		case BrowserMatchTypePath:
+			if uu.MatchesPathRule(s.Matches[i].Value) {
 				return true
 			}
 		}
@@ -339,6 +345,28 @@ func (s *Settings) GetSelectableBrowsers() []Browser {
 }
 
 func (s *Settings) GetMatchingBrowser(u string) (*Browser, error) {
+	// A path rule is more specific than a site, domain or regex rule, and a longer path than a shorter one, so
+	// the deepest matching path rule wins whichever browser it is on.
+	uu := NewURL(u)
+	best, bestDepth := -1, -1
+	for i := range s.Browsers {
+		for _, m := range s.Browsers[i].Matches {
+			if m.Type != BrowserMatchTypePath || !uu.MatchesPathRule(m.Value) {
+				continue
+			}
+			if depth := PathRuleDepth(m.Value); depth > bestDepth {
+				best, bestDepth = i, depth
+			}
+		}
+	}
+	if best >= 0 {
+		return &Browser{
+			Name:     s.Browsers[best].Name,
+			Command:  s.Browsers[best].Command,
+			IconPath: s.Browsers[best].IconPath,
+		}, nil
+	}
+
 	for i := range s.Browsers {
 		if s.Browsers[i].MatchesUrl(u) {
 			return &Browser{
