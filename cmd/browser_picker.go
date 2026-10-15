@@ -149,10 +149,10 @@ func (picker *BrowserPicker) Run(_ context.Context, urlToOpen string) error {
 		cols := min(len(buttons), settings.Ui.GetMaxItemsPerRow())
 		rows := (len(buttons) + cols - 1) / cols
 		width := float32(cols+1) * horizontalButtonWidth
-		height := float32(rows*horizontalButtonHeight) + 180
+		height := float32(rows*horizontalButtonHeight) + 180 + rememberChoicesHeight(urlToOpen)
 		w.Resize(fyne.NewSize(width, height))
 	} else {
-		w.Resize(fyne.NewSize(verticalWindowWidth, verticalWindowMinHeight))
+		w.Resize(fyne.NewSize(verticalWindowWidth, verticalWindowMinHeight+rememberChoicesHeight(urlToOpen)))
 	}
 
 	w.SetFixedSize(true)
@@ -680,6 +680,17 @@ func (picker *BrowserPicker) fetchAndUpdateFavicon(
 		img.Resource = res
 		img.Refresh()
 	})
+}
+
+// rememberChoiceRowHeight is the room one radio row of the remember list needs.
+const rememberChoiceRowHeight = 38
+
+// rememberChoicesHeight is the room the remember list needs once it is shown: the window is a fixed size, so it
+// has to be made tall enough up front, for one row per choice.
+func rememberChoicesHeight(urlToOpen string) float32 {
+	rows := 2 + max(0, len(linkquisition.NewURL(urlToOpen).GetPathSegments())-1)
+
+	return float32(rows * rememberChoiceRowHeight)
 }
 
 // rememberPathPrefix marks a remember choice that is a path rule: "path:github.com/org/repo/*".
